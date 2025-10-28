@@ -35,8 +35,8 @@
         <hr>
         <div class="secure-note">
           <ul>
-            <li>يتم تشغيل الإعداد فقط إذا كانت جلستك إدارية (Admin).</li>
-            <li>لا يتم عرض أي تفاصيل حساسة هنا؛ تُكتب السجلات داخلياً فقط.</li>
+            <li>يتم تشغيل الإعداد فقط إذا كانت جلستك إدارية (Admin). هنا نفترض الوصول المسموح؛ في الإنتاج أضف فحص JS للجلسة.</li>
+            <li>لا يتم عرض أي تفاصيل حساسة هنا؛ تُكتب السجلات داخلياً فقط (في console).</li>
             <li>بعد نجاح الإعداد، يُنصح بحذف هذه الصفحة: <code>setup_firebase.html</code>.</li>
           </ul>
         </div>
@@ -49,25 +49,73 @@
     </div>
   </div>
 
-  <script>
+  <!-- Firebase SDKs -->
+  <script type="module">
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+    import { getDatabase, set, ref, get } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-database.js"; // لـ Realtime Database
+
+    // Your web app's Firebase configuration (من البيانات اللي قدمتها)
+    const firebaseConfig = {
+      apiKey: "AIzaSyC60dRjohMc4Usev0ZXDHFJ1mSRZug_MkQ",
+      authDomain: "school-system-864d8.firebaseapp.com",
+      databaseURL: "https://school-system-864d8-default-rtdb.firebaseio.com",
+      projectId: "school-system-864d8",
+      storageBucket: "school-system-864d8.firebasestorage.app",
+      messagingSenderId: "988035570059",
+      appId: "1:988035570059:web:daa8da1683daddd140778e"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+
     async function runSetup() {
       const statusEl = document.getElementById('setupStatus');
       statusEl.className = 'alert alert-info status';
       statusEl.textContent = 'جارٍ تشغيل الإعداد...';
+
       try {
-        // استدعاء المُثبت الآمن على الخادم (يتطلب جلسة مدير)
-        const res = await fetch('setup_firebase_installer.php', {
-          method: 'GET',
-          cache: 'no-store',
-          credentials: 'same-origin'
-        });
-        if (!res.ok) {
-          throw new Error('فشل التشغيل (' + res.status + ')');
+        // فحص إذا كان الإعداد موجود بالفعل (لمنع التكرار)
+        const snapshot = await get(ref(database, 'setup_status'));
+        if (snapshot.exists()) {
+          statusEl.className = 'alert alert-warning status';
+          statusEl.textContent = 'الإعداد موجود بالفعل. يمكنك التحقق منه في Firebase Console.';
+          return;
         }
-        // لا نعرض نص الاستجابة لتجنب أي معلومات حساسة
+
+        // إعداد أساسي: إضافة status في Realtime Database
+        await set(ref(database, 'setup_status'), {
+          status: 'completed',
+          timestamp: Date.now(),
+          projectId: firebaseConfig.projectId,
+          databaseURL: firebaseConfig.databaseURL,
+          message: 'تم الإعداد بنجاح من الـ Client-Side'
+        });
+
+        // مثال إضافي: إنشاء قسم users افتراضي (يمكنك إضافة users حقيقيين هنا)
+        await set(ref(database, 'users/admin'), {
+          email: 'admin@school.com',
+          role: 'admin',
+          createdAt: Date.now()
+        });
+
+        // مثال: إضافة settings أساسية للنظام
+        await set(ref(database, 'settings'), {
+          schoolName: 'نظام المدرسة',
+          version: '1.0',
+          updatedAt: Date.now()
+        });
+
+        // سجل نجاح داخلي (في console فقط، مش يتعرض للمستخدم)
+        console.log('Firebase setup completed successfully at', new Date().toLocaleString('ar-EG'));
+        console.log('Project ID:', firebaseConfig.projectId);
+        console.log('Database URL:', firebaseConfig.databaseURL);
+
         statusEl.className = 'alert alert-success status';
-        statusEl.textContent = 'تم الإعداد بنجاح. يُرجى حذف هذه الصفحة الآن.';
+        statusEl.textContent = 'تم الإعداد بنجاح! يُرجى حذف هذه الصفحة الآن. تحقق من Firebase Console للتحقق.';
       } catch (err) {
+        console.error('خطأ في الإعداد:', err);
         statusEl.className = 'alert alert-danger status';
         statusEl.textContent = 'حدث خطأ أثناء الإعداد: ' + (err && err.message ? err.message : 'خطأ غير معروف');
       }
