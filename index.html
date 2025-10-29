@@ -70,6 +70,29 @@
     function log(msg){ logEl.textContent += (msg + "\n"); }
     function setStatus(cls, msg){ statusEl.className = 'alert ' + cls + ' status'; statusEl.textContent = msg; }
 
+    // تجميع أخطاء عامة لعرضها في سجل التنفيذ
+    window.addEventListener('error', (e) => {
+      setStatus('alert-danger', 'خطأ عام في الصفحة: ' + (e.message || 'غير معروف'));
+      log('WindowError: ' + (e.message || '') + '\n' + (e.error?.stack || ''));
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      setStatus('alert-danger', 'فشل وعد غير معالج: ' + (e.reason?.message || 'غير معروف'));
+      log('UnhandledRejection: ' + (e.reason?.message || '') + '\n' + (e.reason?.stack || ''));
+    });
+
+    // تأكيد تحميل الوحدة وتهيئة Firestore
+    try {
+      log('تهيئة الوحدة: بدأ السكربت');
+      if (db) {
+        log('Firestore متاح: OK');
+      } else {
+        setStatus('alert-danger', 'تعذر الوصول إلى Firestore (db غير معرّف)');
+      }
+    } catch (e) {
+      setStatus('alert-danger', 'فشل التهيئة الأولية: ' + e.message);
+      log('InitError: ' + e.stack);
+    }
+
     async function checkInstalled(){
       try {
         const metaDoc = await getDoc(doc(db, 'meta', 'installed'));
@@ -83,6 +106,13 @@
           installedAlert.classList.remove('d-none');
         }
         setStatus('alert-info', 'الفحص الأولي مكتمل. اختر العملية المناسبة.');
+        // اختبار اتصال سريع
+        try {
+          const testSnap = await getDocs(collection(db, 'meta'));
+          log('اتصال Firestore ناجح. وثائق meta: ' + testSnap.size);
+        } catch (connErr) {
+          log('تنبيه: فشل اختبار الاتصال الإضافي: ' + connErr.message);
+        }
       } catch (e) {
         setStatus('alert-danger', 'فشل الفحص الأولي: ' + e.message);
         log('Error(checkInstalled): ' + e.stack);
@@ -189,8 +219,14 @@
     document.getElementById('btnSeedOnly').addEventListener('click', () => runSeed({wipe:false}));
     document.getElementById('btnCheck').addEventListener('click', checkInstalled);
 
-    // فحص تلقائي عند الفتح
+    // فحص تلقائي عند الفتح مع مؤقت أمان لإظهار حالة في حال لم يبدأ
     checkInstalled();
+    setTimeout(() => {
+      const current = statusEl.textContent?.trim() || '';
+      if (current.indexOf('الفحص الأولي مكتمل') === -1 && current.indexOf('فشل') === -1) {
+        log('تنبيه: لم يكتمل الفحص خلال المهلة. جرّب زر "إعادة الفحص".');
+      }
+    }, 3000);
   </script>
 </body>
 </html>
