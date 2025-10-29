@@ -3,130 +3,194 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>إعداد Firebase للنظام</title>
+  <title>إعادة تهيئة Firestore وإعداد البيانات</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body { background-color: #f8f9fa; }
-    .container { max-width: 800px; }
+    body { background: #f7f9fc; }
+    .container { max-width: 900px; }
     .card { border: 1px solid #e9ecef; }
     .status { font-family: ui-sans-serif, system-ui; }
     .secure-note { font-size: .95rem; }
+    .log { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .9rem; }
   </style>
-  <!-- أمان أساسي للصفحة: لا أسرار ولا عرض بيانات حساسة -->
 </head>
 <body>
   <div class="container py-5">
     <div class="card shadow-sm">
       <div class="card-body">
-        <h3 class="card-title mb-3"><i class="bi bi-shield-lock"></i> إعداد Firebase وترتيب الداشبورد</h3>
-        <p class="text-muted mb-4">هذه الصفحة تُشغّل مُثبّت النظام لتجهيز قاعدة البيانات ومزامنة Firebase بما يتناسق مع الموقع. بعد الانتهاء، احذف هذه الصفحة لتعزيز الأمان.</p>
+        <h3 class="card-title mb-3">إعادة تهيئة Firestore وإعداد بيانات الموقع</h3>
+        <p class="text-muted mb-4">هذه الصفحة تُستخدم مرة واحدة لإعادة تعيين قاعدة بيانات Firestore واستيراد البيانات الأساسية من ملفات JSON المحلية داخل مجلد <code>data/</code>. بعد نجاح العملية يُنصح بحذف هذه الصفحة نهائياً.</p>
 
-        <div class="alert alert-info status" id="setupStatus">جارٍ التحقق من الصلاحيات وبدء الإعداد...</div>
+        <div id="installedAlert" class="alert d-none" role="alert"></div>
+        <div id="status" class="alert alert-info status">جارٍ الفحص الأولي...</div>
 
-        <div class="d-flex gap-2 mb-3">
-          <button id="runBtn" class="btn btn-primary">
-            تشغيل الإعداد الآن
+        <div class="mb-3">
+          <button id="btnResetSeed" class="btn btn-danger me-2">
+            <i class="bi bi-exclamation-triangle"></i> إعادة ضبط Firestore واستيراد البيانات
           </button>
-          <button id="retryBtn" class="btn btn-outline-secondary">
-            إعادة المحاولة
+          <button id="btnSeedOnly" class="btn btn-primary me-2">
+            استيراد البيانات فقط (بدون حذف)
+          </button>
+          <button id="btnCheck" class="btn btn-outline-secondary">
+            إعادة الفحص
           </button>
         </div>
 
-        <hr>
-        <div class="secure-note">
+        <div class="secure-note mb-3">
           <ul>
-            <li>يتم تشغيل الإعداد فقط إذا كانت جلستك إدارية (Admin). هنا نفترض الوصول المسموح؛ في الإنتاج أضف فحص JS للجلسة.</li>
-            <li>لا يتم عرض أي تفاصيل حساسة هنا؛ تُكتب السجلات داخلياً فقط (في console).</li>
-            <li>بعد نجاح الإعداد، يُنصح بحذف هذه الصفحة: <code>setup_firebase.html</code>.</li>
+            <li>سيتم إنشاء/تحديث مستند <code>meta/installed</code> ليمنع إعادة التشغيل غير المقصود.</li>
+            <li>يتم الاستيراد من: <code>data/teachers.json</code>, <code>data/classes.json</code>, <code>data/students.json</code>, <code>data/attendance.json</code> إن وُجدت.</li>
+            <li>بعد النجاح: احذف هذه الصفحة <code>oooooooooooooooo.html</code> لضمان الأمان.</li>
           </ul>
         </div>
 
+        <div class="card">
+          <div class="card-header">سجل التنفيذ</div>
+          <div class="card-body">
+            <pre id="log" class="log mb-0"></pre>
+          </div>
+        </div>
+
         <div class="mt-4">
-          <a href="admin_panel.php" class="btn btn-success me-2">الذهاب إلى لوحة المدير</a>
-          <a href="teacher_panel.php" class="btn btn-secondary">لوحة المعلم</a>
+          <a href="index.php" class="btn btn-secondary">العودة للصفحة الرئيسية</a>
+          <a href="teacher_panel.php" class="btn btn-success">لوحة المعلم</a>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Firebase SDKs -->
   <script type="module">
-    // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
-    import { getDatabase, set, ref, get } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-database.js"; // لـ Realtime Database
+    import { db, FirestoreDB } from './firestore.js';
+    import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
-    // Your web app's Firebase configuration (من البيانات اللي قدمتها)
-    const firebaseConfig = {
-      apiKey: "AIzaSyC60dRjohMc4Usev0ZXDHFJ1mSRZug_MkQ",
-      authDomain: "school-system-864d8.firebaseapp.com",
-      databaseURL: "https://school-system-864d8-default-rtdb.firebaseio.com",
-      projectId: "school-system-864d8",
-      storageBucket: "school-system-864d8.firebasestorage.app",
-      messagingSenderId: "988035570059",
-      appId: "1:988035570059:web:daa8da1683daddd140778e"
-    };
+    const statusEl = document.getElementById('status');
+    const installedAlert = document.getElementById('installedAlert');
+    const logEl = document.getElementById('log');
 
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const database = getDatabase(app);
+    function log(msg){ logEl.textContent += (msg + "\n"); }
+    function setStatus(cls, msg){ statusEl.className = 'alert ' + cls + ' status'; statusEl.textContent = msg; }
 
-    async function runSetup() {
-      const statusEl = document.getElementById('setupStatus');
-      statusEl.className = 'alert alert-info status';
-      statusEl.textContent = 'جارٍ تشغيل الإعداد...';
-
+    async function checkInstalled(){
       try {
-        // فحص إذا كان الإعداد موجود بالفعل (لمنع التكرار)
-        const snapshot = await get(ref(database, 'setup_status'));
-        if (snapshot.exists()) {
-          statusEl.className = 'alert alert-warning status';
-          statusEl.textContent = 'الإعداد موجود بالفعل. يمكنك التحقق منه في Firebase Console.';
-          return;
+        const metaDoc = await getDoc(doc(db, 'meta', 'installed'));
+        if (metaDoc.exists()) {
+          installedAlert.className = 'alert alert-warning';
+          installedAlert.textContent = 'تم العثور على علامة تثبيت سابقة (meta/installed). يمكنك الاستمرار لكن يُنصح بحذف هذه الصفحة بعد الانتهاء.';
+          installedAlert.classList.remove('d-none');
+        } else {
+          installedAlert.className = 'alert alert-info';
+          installedAlert.textContent = 'لم يتم العثور على تثبيت سابق. جاهز للتنفيذ.';
+          installedAlert.classList.remove('d-none');
         }
-
-        // إعداد أساسي: إضافة status في Realtime Database
-        await set(ref(database, 'setup_status'), {
-          status: 'completed',
-          timestamp: Date.now(),
-          projectId: firebaseConfig.projectId,
-          databaseURL: firebaseConfig.databaseURL,
-          message: 'تم الإعداد بنجاح من الـ Client-Side'
-        });
-
-        // مثال إضافي: إنشاء قسم users افتراضي (يمكنك إضافة users حقيقيين هنا)
-        await set(ref(database, 'users/admin'), {
-          email: 'admin@school.com',
-          role: 'admin',
-          createdAt: Date.now()
-        });
-
-        // مثال: إضافة settings أساسية للنظام
-        await set(ref(database, 'settings'), {
-          schoolName: 'نظام المدرسة',
-          version: '1.0',
-          updatedAt: Date.now()
-        });
-
-        // سجل نجاح داخلي (في console فقط، مش يتعرض للمستخدم)
-        console.log('Firebase setup completed successfully at', new Date().toLocaleString('ar-EG'));
-        console.log('Project ID:', firebaseConfig.projectId);
-        console.log('Database URL:', firebaseConfig.databaseURL);
-
-        statusEl.className = 'alert alert-success status';
-        statusEl.textContent = 'تم الإعداد بنجاح! يُرجى حذف هذه الصفحة الآن. تحقق من Firebase Console للتحقق.';
-      } catch (err) {
-        console.error('خطأ في الإعداد:', err);
-        statusEl.className = 'alert alert-danger status';
-        statusEl.textContent = 'حدث خطأ أثناء الإعداد: ' + (err && err.message ? err.message : 'خطأ غير معروف');
+        setStatus('alert-info', 'الفحص الأولي مكتمل. اختر العملية المناسبة.');
+      } catch (e) {
+        setStatus('alert-danger', 'فشل الفحص الأولي: ' + e.message);
+        log('Error(checkInstalled): ' + e.stack);
       }
     }
 
-    // تشغيل تلقائي عند فتح الصفحة
-    document.addEventListener('DOMContentLoaded', () => {
-      runSetup();
-      document.getElementById('runBtn').addEventListener('click', runSetup);
-      document.getElementById('retryBtn').addEventListener('click', runSetup);
-    });
+    async function wipeCollections(names){
+      for (const name of names){
+        log('حذف محتويات المجموعة: ' + name);
+        const snap = await getDocs(collection(db, name));
+        const tasks = snap.docs.map(d => deleteDoc(doc(db, name, d.id)));
+        await Promise.all(tasks);
+      }
+    }
+
+    async function fetchJson(path){
+      try {
+        const res = await fetch(path, { cache: 'no-store' });
+        if (!res.ok) return null;
+        return await res.json();
+      } catch { return null; }
+    }
+
+    async function seedTeachers(obj){
+      if (!obj || typeof obj !== 'object') return;
+      const entries = Object.entries(obj);
+      for (const [id, data] of entries){
+        await setDoc(doc(db, 'teachers', id), data);
+      }
+      // تأكيد وجود حساب إداري افتراضي إن لم يكن
+      const adminId = 'admintest';
+      const adminDoc = await getDoc(doc(db, 'teachers', adminId));
+      if (!adminDoc.exists()){
+        await setDoc(doc(db, 'teachers', adminId), {
+          teacher_id: 'admintest',
+          password: 'test1234',
+          name: 'حساب إداري افتراضي',
+          email: 'admin@school.om',
+          role: 'admin', failed_logins: 0, last_login: null
+        });
+      }
+    }
+
+    async function seedClasses(obj){
+      if (!obj || typeof obj !== 'object') return;
+      const entries = Object.entries(obj);
+      for (const [id, data] of entries){
+        await setDoc(doc(db, 'classes', id), data);
+        // class_codes: استخدام الحقل class_id أو class_code إن وجد
+        const code = data.class_code || id;
+        await setDoc(doc(db, 'class_codes', code), { class_id: id });
+      }
+    }
+
+    async function seedStudents(obj){
+      if (!obj || typeof obj !== 'object') return;
+      const entries = Object.entries(obj);
+      for (const [id, data] of entries){
+        await setDoc(doc(db, 'students', id), data);
+        const classId = data.class_id;
+        if (classId){
+          await setDoc(doc(db, `students_by_class/${classId}/items`, id), data);
+        }
+      }
+    }
+
+    async function seedAttendance(obj){
+      if (!obj || typeof obj !== 'object') return;
+      const entries = Object.entries(obj);
+      for (const [id, data] of entries){
+        await setDoc(doc(db, 'attendance', id), data);
+      }
+    }
+
+    async function markInstalled(){
+      await setDoc(doc(db, 'meta', 'installed'), { installed_at: new Date().toISOString() });
+    }
+
+    async function runSeed({wipe=false}){
+      try {
+        setStatus('alert-info', 'جارٍ التحضير...');
+        if (wipe){
+          await wipeCollections(['teachers','classes','students','attendance','periods','class_codes','students_by_class']);
+        }
+        setStatus('alert-info', 'جارٍ استيراد البيانات من مجلد data/...');
+        const teachersJson = await fetchJson('data/teachers.json');
+        const classesJson = await fetchJson('data/classes.json');
+        const studentsJson = await fetchJson('data/students.json');
+        const attendanceJson = await fetchJson('data/attendance.json');
+        if (teachersJson) { log('استيراد المعلمين...'); await seedTeachers(teachersJson); } else { log('لم يتم العثور على data/teachers.json'); }
+        if (classesJson)  { log('استيراد الصفوف...');    await seedClasses(classesJson); } else { log('لم يتم العثور على data/classes.json'); }
+        if (studentsJson) { log('استيراد الطلاب...');    await seedStudents(studentsJson); } else { log('لم يتم العثور على data/students.json'); }
+        if (attendanceJson){ log('استيراد الحضور...');   await seedAttendance(attendanceJson); } else { log('لم يتم العثور على data/attendance.json'); }
+
+        await markInstalled();
+        setStatus('alert-success', 'تمت عملية الإعداد بنجاح. يُرجى حذف هذه الصفحة الآن.');
+      } catch (e) {
+        setStatus('alert-danger', 'فشل الإعداد: ' + e.message);
+        log('Error(runSeed): ' + e.stack);
+      }
+    }
+
+    document.getElementById('btnResetSeed').addEventListener('click', () => runSeed({wipe:true}));
+    document.getElementById('btnSeedOnly').addEventListener('click', () => runSeed({wipe:false}));
+    document.getElementById('btnCheck').addEventListener('click', checkInstalled);
+
+    // فحص تلقائي عند الفتح
+    checkInstalled();
   </script>
 </body>
 </html>
