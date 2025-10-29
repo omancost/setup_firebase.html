@@ -24,6 +24,57 @@
         <div id="installedAlert" class="alert d-none" role="alert"></div>
         <div id="status" class="alert alert-info status">جارٍ الفحص الأولي...</div>
 
+        <div class="card mb-3">
+          <div class="card-header">المصادقة (اختياري لكنها مطلوبة إذا كانت قواعد Firestore مغلقة)</div>
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-4">
+                <label for="authEmail" class="form-label">البريد الإلكتروني</label>
+                <input type="email" id="authEmail" class="form-control" placeholder="admin@school.om">
+              </div>
+              <div class="col-md-4">
+                <label for="authPassword" class="form-label">كلمة المرور</label>
+                <input type="password" id="authPassword" class="form-control" placeholder="••••••••">
+              </div>
+              <div class="col-md-4">
+                <button id="btnLogin" class="btn btn-success">تسجيل الدخول</button>
+                <span id="authState" class="ms-2 text-muted">غير مسجل</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header">رفع ملفات البيانات (JSON)</div>
+          <div class="card-body">
+            <p class="text-muted">يمكنك رفع الملفات بصيغة JSON. يقبل النظام مصفوفات عناصر أو كائنًا مفاتيحه هي المعرفات.</p>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">المعلمين (teachers.json)</label>
+                <input type="file" id="fileTeachers" accept="application/json" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">الصفوف (classes.json)</label>
+                <input type="file" id="fileClasses" accept="application/json" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">الطلاب (students.json)</label>
+                <input type="file" id="fileStudents" accept="application/json" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">الحضور (attendance.json)</label>
+                <input type="file" id="fileAttendance" accept="application/json" class="form-control">
+              </div>
+            </div>
+            <div class="form-check mt-3">
+              <input class="form-check-input" type="checkbox" id="chkOnlyUploaded">
+              <label class="form-check-label" for="chkOnlyUploaded">
+                استخدام الملفات المرفوعة فقط وتجاهل مجلد <code>data/</code>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div class="mb-3">
           <button id="btnResetSeed" class="btn btn-danger me-2">
             <i class="bi bi-exclamation-triangle"></i> إعادة ضبط Firestore واستيراد البيانات
@@ -66,6 +117,17 @@
     const statusEl = document.getElementById('status');
     const installedAlert = document.getElementById('installedAlert');
     const logEl = document.getElementById('log');
+    const authEmailEl = document.getElementById('authEmail');
+    const authPasswordEl = document.getElementById('authPassword');
+    const authStateEl = document.getElementById('authState');
+    const btnLoginEl = document.getElementById('btnLogin');
+    const fileTeachersEl = document.getElementById('fileTeachers');
+    const fileClassesEl = document.getElementById('fileClasses');
+    const fileStudentsEl = document.getElementById('fileStudents');
+    const fileAttendanceEl = document.getElementById('fileAttendance');
+    const onlyUploadedEl = document.getElementById('chkOnlyUploaded');
+
+    const uploaded = { teachers: null, classes: null, students: null, attendance: null };
 
     function log(msg){ logEl.textContent += (msg + "\n"); }
     function setStatus(cls, msg){ statusEl.className = 'alert ' + cls + ' status'; statusEl.textContent = msg; }
@@ -92,6 +154,61 @@
       setStatus('alert-danger', 'فشل التهيئة الأولية: ' + e.message);
       log('InitError: ' + e.stack);
     }
+
+    // تسجيل الدخول عبر Firebase Auth إن لزم
+    async function login(){
+      const email = (authEmailEl.value || '').trim();
+      const password = (authPasswordEl.value || '').trim();
+      if (!email || !password){
+        log('يرجى إدخال البريد وكلمة المرور لتسجيل الدخول.');
+        return;
+      }
+      try {
+        authStateEl.textContent = 'جارٍ تسجيل الدخول...';
+        const user = await FirestoreDB.auth.login(email, password);
+        if (user){
+          authStateEl.textContent = 'تم تسجيل الدخول: ' + (user.email || '');
+          log('تم تسجيل الدخول بنجاح كـ ' + (user.email || '')); 
+        } else {
+          authStateEl.textContent = 'فشل تسجيل الدخول';
+          log('فشل تسجيل الدخول: تحقق من البريد/كلمة المرور وقواعد Firestore');
+        }
+      } catch(e){
+        authStateEl.textContent = 'خطأ في تسجيل الدخول';
+        log('Error(login): ' + (e.message || '')); 
+      }
+    }
+
+    btnLoginEl.addEventListener('click', login);
+
+    // قراءة ملفات JSON المرفوعة
+    async function readJsonFile(file){
+      if (!file) return null;
+      try {
+        const text = await file.text();
+        return JSON.parse(text);
+      } catch(e){
+        log('تعذر قراءة/تحليل ملف JSON: ' + (e.message || ''));
+        return null;
+      }
+    }
+
+    fileTeachersEl.addEventListener('change', async (e) => {
+      uploaded.teachers = await readJsonFile(e.target.files?.[0]);
+      log('ملف المعلمين: ' + (uploaded.teachers ? 'تم التحميل' : 'تعذر التحميل'));
+    });
+    fileClassesEl.addEventListener('change', async (e) => {
+      uploaded.classes = await readJsonFile(e.target.files?.[0]);
+      log('ملف الصفوف: ' + (uploaded.classes ? 'تم التحميل' : 'تعذر التحميل'));
+    });
+    fileStudentsEl.addEventListener('change', async (e) => {
+      uploaded.students = await readJsonFile(e.target.files?.[0]);
+      log('ملف الطلاب: ' + (uploaded.students ? 'تم التحميل' : 'تعذر التحميل'));
+    });
+    fileAttendanceEl.addEventListener('change', async (e) => {
+      uploaded.attendance = await readJsonFile(e.target.files?.[0]);
+      log('ملف الحضور: ' + (uploaded.attendance ? 'تم التحميل' : 'تعذر التحميل'));
+    });
 
     async function checkInstalled(){
       try {
@@ -137,10 +254,11 @@
     }
 
     async function seedTeachers(obj){
-      if (!obj || typeof obj !== 'object') return;
-      const entries = Object.entries(obj);
+      if (!obj) return;
+      const entries = Array.isArray(obj) ? obj.map((data, idx) => [data.teacher_id || data.id || String(idx+1), data]) : Object.entries(obj);
       for (const [id, data] of entries){
-        await setDoc(doc(db, 'teachers', id), data);
+        const docId = id || data.teacher_id || data.id;
+        await setDoc(doc(db, 'teachers', String(docId)), data);
       }
       // تأكيد وجود حساب إداري افتراضي إن لم يكن
       const adminId = 'admintest';
@@ -157,33 +275,35 @@
     }
 
     async function seedClasses(obj){
-      if (!obj || typeof obj !== 'object') return;
-      const entries = Object.entries(obj);
+      if (!obj) return;
+      const entries = Array.isArray(obj) ? obj.map((data, idx) => [data.class_id || data.id || String(idx+1), data]) : Object.entries(obj);
       for (const [id, data] of entries){
-        await setDoc(doc(db, 'classes', id), data);
-        // class_codes: استخدام الحقل class_id أو class_code إن وجد
-        const code = data.class_code || id;
-        await setDoc(doc(db, 'class_codes', code), { class_id: id });
+        const docId = id || data.class_id || data.id;
+        await setDoc(doc(db, 'classes', String(docId)), data);
+        const code = data.class_code || String(docId);
+        await setDoc(doc(db, 'class_codes', String(code)), { class_id: String(docId) });
       }
     }
 
     async function seedStudents(obj){
-      if (!obj || typeof obj !== 'object') return;
-      const entries = Object.entries(obj);
+      if (!obj) return;
+      const entries = Array.isArray(obj) ? obj.map((data, idx) => [data.student_id || data.id || String(idx+1), data]) : Object.entries(obj);
       for (const [id, data] of entries){
-        await setDoc(doc(db, 'students', id), data);
+        const docId = id || data.student_id || data.id;
+        await setDoc(doc(db, 'students', String(docId)), data);
         const classId = data.class_id;
         if (classId){
-          await setDoc(doc(db, `students_by_class/${classId}/items`, id), data);
+          await setDoc(doc(db, `students_by_class/${classId}/items`, String(docId)), data);
         }
       }
     }
 
     async function seedAttendance(obj){
-      if (!obj || typeof obj !== 'object') return;
-      const entries = Object.entries(obj);
+      if (!obj) return;
+      const entries = Array.isArray(obj) ? obj.map((data, idx) => [data.attendance_id || data.id || String(idx+1), data]) : Object.entries(obj);
       for (const [id, data] of entries){
-        await setDoc(doc(db, 'attendance', id), data);
+        const docId = id || data.attendance_id || data.id;
+        await setDoc(doc(db, 'attendance', String(docId)), data);
       }
     }
 
@@ -197,15 +317,23 @@
         if (wipe){
           await wipeCollections(['teachers','classes','students','attendance','periods','class_codes','students_by_class']);
         }
-        setStatus('alert-info', 'جارٍ استيراد البيانات من مجلد data/...');
-        const teachersJson = await fetchJson('data/teachers.json');
-        const classesJson = await fetchJson('data/classes.json');
-        const studentsJson = await fetchJson('data/students.json');
-        const attendanceJson = await fetchJson('data/attendance.json');
-        if (teachersJson) { log('استيراد المعلمين...'); await seedTeachers(teachersJson); } else { log('لم يتم العثور على data/teachers.json'); }
-        if (classesJson)  { log('استيراد الصفوف...');    await seedClasses(classesJson); } else { log('لم يتم العثور على data/classes.json'); }
-        if (studentsJson) { log('استيراد الطلاب...');    await seedStudents(studentsJson); } else { log('لم يتم العثور على data/students.json'); }
-        if (attendanceJson){ log('استيراد الحضور...');   await seedAttendance(attendanceJson); } else { log('لم يتم العثور على data/attendance.json'); }
+        setStatus('alert-info', 'جارٍ استيراد البيانات...');
+        let teachersJson = uploaded.teachers;
+        let classesJson  = uploaded.classes;
+        let studentsJson = uploaded.students;
+        let attendanceJson = uploaded.attendance;
+        if (!onlyUploadedEl.checked){
+          // محاولة جلب من مجلد data/ كخيار احتياطي
+          teachersJson = teachersJson || await fetchJson('data/teachers.json');
+          classesJson  = classesJson  || await fetchJson('data/classes.json');
+          studentsJson = studentsJson || await fetchJson('data/students.json');
+          attendanceJson = attendanceJson || await fetchJson('data/attendance.json');
+        }
+
+        if (teachersJson) { log('استيراد المعلمين...'); await seedTeachers(teachersJson); } else { log('لا توجد بيانات للمعلمين'); }
+        if (classesJson)  { log('استيراد الصفوف...');    await seedClasses(classesJson); } else { log('لا توجد بيانات للصفوف'); }
+        if (studentsJson) { log('استيراد الطلاب...');    await seedStudents(studentsJson); } else { log('لا توجد بيانات للطلاب'); }
+        if (attendanceJson){ log('استيراد الحضور...');   await seedAttendance(attendanceJson); } else { log('لا توجد بيانات للحضور'); }
 
         await markInstalled();
         setStatus('alert-success', 'تمت عملية الإعداد بنجاح. يُرجى حذف هذه الصفحة الآن.');
